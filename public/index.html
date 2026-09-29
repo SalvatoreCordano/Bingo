@@ -4,7 +4,7 @@
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
   <meta name="theme-color" content="#1f2a44">
-  <title>Bingo en sala</title>
+  <title>Juegos en sala</title>
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=Fredoka:wght@500;600;700&family=Inter:wght@400;500;600&display=swap" rel="stylesheet">
@@ -14,15 +14,23 @@
   <!-- Pantalla de inicio -->
   <main id="home" class="screen">
     <div class="home-card">
-      <div class="logo" aria-hidden="true">
+      <div id="logo" class="logo" aria-hidden="true">
         <span>B</span><span>I</span><span>N</span><span>G</span><span>O</span>
       </div>
-      <p class="tagline">Tu cartón en el celular. Las bolas, en la mesa.</p>
+      <p class="tagline">Bingo y Tutti Frutti para jugar en grupo, cada uno desde su celular.</p>
 
       <label class="field">
         <span>Tu nombre</span>
         <input id="name" type="text" maxlength="20" autocomplete="nickname" placeholder="Ej: Ana">
       </label>
+
+      <div class="field">
+        <span>¿A qué juegan?</span>
+        <div class="segmented" role="radiogroup" aria-label="Juego">
+          <label><input type="radio" name="game" value="bingo" checked><span>Bingo</span></label>
+          <label><input type="radio" name="game" value="tutti"><span>Tutti Frutti</span></label>
+        </div>
+      </div>
 
       <button id="create" class="btn btn-primary">Crear sala</button>
 
@@ -51,10 +59,12 @@
     </header>
 
     <section class="status">
+      <span id="game-name" class="pill"></span>
       <span id="round" class="pill"></span>
       <span id="phase" class="pill pill-accent"></span>
     </section>
 
+    <div id="bingo-view">
     <section class="card-wrap">
       <div class="card-head">
         <span id="player-name"></span>
@@ -73,13 +83,40 @@
         <button id="reset" class="btn btn-secondary">Nueva partida</button>
       </div>
     </section>
+    </div>
+
+    <div id="tutti-view" hidden>
+      <section class="wheel-wrap">
+        <div class="wheel-stage">
+          <div class="wheel-pointer" aria-hidden="true"></div>
+          <svg id="wheel" class="wheel" viewBox="-100 -100 200 200" aria-hidden="true"></svg>
+          <div id="wheel-center" class="wheel-center"></div>
+        </div>
+        <p id="wheel-status" class="wheel-status" aria-live="polite"></p>
+        <button id="spin" class="btn btn-primary btn-spin" hidden>Girar la ruleta</button>
+      </section>
+
+      <button id="basta" class="btn btn-claim is-bingo">¡BASTA!</button>
+
+      <section class="panel">
+        <div class="label">Letras que ya salieron</div>
+        <div id="used-letters" class="used-letters"></div>
+      </section>
+
+      <section id="tutti-host-tools" class="host-tools" hidden>
+        <div class="label">Controles de la sala</div>
+        <div class="host-row">
+          <button id="tutti-reset" class="btn btn-ghost">Devolver todas las letras</button>
+        </div>
+      </section>
+    </div>
 
     <section class="panel">
       <div class="label">Jugadores</div>
       <ul id="players" class="players"></ul>
     </section>
 
-    <section class="panel">
+    <section id="claims-panel" class="panel">
       <div class="label">Cantos</div>
       <ul id="claims" class="claims"></ul>
     </section>

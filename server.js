@@ -8,6 +8,9 @@ const crypto = require('crypto');
 const PORT = process.env.PORT || 3000;
 const PUBLIC_DIR = path.join(__dirname, 'public');
 const ROOM_TTL_MS = 12 * 60 * 60 * 1000; // una sala sin actividad se borra a las 12 h
+const SPIN_MS = 5000; // lo que dura el giro de la ruleta del Tutti Frutti
+// Letras de la ruleta: se dejan fuera las que casi no tienen palabras (K, Ñ, Q, W, X, Y, Z)
+const LETTERS = 'ABCDEFGHIJLMNOPRSTUV'.split('');
 
 const rooms = new Map();
 
@@ -80,19 +83,33 @@ function newId() {
 
 function publicState(room, playerId) {
   const player = room.players.get(playerId);
-  return {
+  const state = {
+    game: room.game, // 'bingo' | 'tutti'
     code: room.code,
     round: room.round,
-    phase: room.phase, // 'linea' | 'bingo' | 'terminado'
+    phase: room.phase,
     hostId: room.hostId,
-    me: player ? { id: player.id, name: player.name, card: player.card } : null,
+    me: player ? { id: player.id, name: player.name } : null,
     players: [...room.players.values()].map((p) => ({
       id: p.id,
       name: p.name,
       online: p.clients.size > 0,
     })),
-    claims: room.claims,
   };
+  if (room.game === 'bingo') {
+    // phase: 'linea' | 'bingo' | 'terminado'
+    if (state.me) state.me.card = player.card;
+    state.claims = room.claims;
+  } else {
+    // phase: 'esperando' | 'girando' | 'jugando' | 'basta'
+    state.letters = LETTERS;
+    state.letter = room.letter;
+    state.usedLetters = room.usedLetters;
+    state.spinEndsAt = room.spinEndsAt;
+    state.spinMs = SPIN_MS;
+    state.bastaBy = room.bastaBy;
+  }
+  return state;
 }
 
 function broadcast(room, event) {
@@ -104,7 +121,8 @@ function broadcast(room, event) {
 }
 
 function addPlayer(room, name) {
-  const player = { id: newId(), name, card: generateCard(), clients: new Set() };
+  const player = { id: newId(), name, clients: new Set() };
+  if (room.game === 'bingo') player.card = generateCard();
   room.players.set(player.id, player);
   return player;
 }
@@ -180,15 +198,18 @@ const server = http.createServer(async (req, res) => {
     const body = await readBody(req);
     const name = cleanName(body.name);
     if (!name) return sendJson(res, 400, { error: 'Escribe tu nombre' });
+    const game = body.game === 'tutti' ? 'tutti' : 'bingo';
     const room = {
+      game,
       code: newRoomCode(),
-      round: 1,
-      phase: 'linea',
+      round: game === 'bingo' ? 1 : 0,
+      phase: game === 'bingo' ? 'linea' : 'esperando',
       hostId: null,
       players: new Map(),
-      claims: [],
       updatedAt: Date.now(),
     };
+    if (game === 'bingo') room.claims = [];
+    else Object.assign(room, { letter: null, usedLetters: [], spinEndsAt: null, bastaBy: null });
     const host = addPlayer(room, name);
     room.hostId = host.id;
     rooms.set(room.code, room);
@@ -240,7 +261,7 @@ const server = http.createServer(async (req, res) => {
   if (!player) return sendJson(res, 403, { error: 'No eres parte de esta sala' });
 
   // POST /api/rooms/:code/claim -> cantar línea o bingo
-  if (action === 'claim') {
+  if (room.game === 'bingo' && action === 'claim') {
     const expected = room.phase;
     if (expected === 'terminado') return sendJson(res, 409, { error: 'La partida ya terminó' });
     if (body.type !== expected) {
@@ -253,8 +274,55 @@ const server = http.createServer(async (req, res) => {
     return sendJson(res, 200, { ok: true });
   }
 
+  // POST /api/rooms/:code/basta -> cortar la ronda del Tutti Frutti
+  if (room.game === 'tutti' && action === 'basta') {
+    if (room.phase !== 'jugando') {
+      return sendJson(res, 409, { error: room.phase === 'basta' ? 'Alguien ya cantó basta' : 'Todavía no hay letra' });
+    }
+    room.phase = 'basta';
+    room.bastaBy = { playerId: player.id, playerName: player.name };
+    broadcast(room, { type: 'basta', claim: room.bastaBy });
+    return sendJson(res, 200, { ok: true });
+  }
+
   // Acciones solo para quien creó la sala
   if (player.id !== room.hostId) return sendJson(res, 403, { error: 'Solo quien creó la sala puede hacer esto' });
+
+  // POST /api/rooms/:code/spin -> girar la ruleta (Tutti Frutti)
+  if (room.game === 'tutti' && action === 'spin') {
+    if (room.phase === 'girando') return sendJson(res, 409, { error: 'La ruleta ya está girando' });
+    let available = LETTERS.filter((l) => !room.usedLetters.includes(l));
+    if (available.length === 0) {
+      room.usedLetters = [];
+      available = LETTERS;
+    }
+    const letter = available[randInt(available.length)];
+    room.round++;
+    room.letter = letter;
+    room.usedLetters.push(letter);
+    room.phase = 'girando';
+    room.bastaBy = null;
+    room.spinEndsAt = Date.now() + SPIN_MS;
+    const round = room.round;
+    broadcast(room, { type: 'spin' });
+    setTimeout(() => {
+      // Solo si nadie reinició la sala mientras giraba
+      if (room.round === round && room.phase === 'girando') {
+        room.phase = 'jugando';
+        broadcast(room, { type: 'letter' });
+      }
+    }, SPIN_MS);
+    return sendJson(res, 200, { ok: true });
+  }
+
+  // POST /api/rooms/:code/reset (Tutti Frutti) -> todas las letras vuelven a la ruleta
+  if (room.game === 'tutti' && action === 'reset') {
+    Object.assign(room, { round: 0, phase: 'esperando', letter: null, usedLetters: [], spinEndsAt: null, bastaBy: null });
+    broadcast(room, { type: 'reset' });
+    return sendJson(res, 200, { ok: true });
+  }
+
+  if (room.game !== 'bingo') return sendJson(res, 404, { error: 'No encontrado' });
 
   // POST /api/rooms/:code/undo -> anular el último canto (si fue un error)
   if (action === 'undo') {

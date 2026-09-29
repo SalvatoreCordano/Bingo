@@ -1,7 +1,8 @@
 // Cliente del Bingo: crea/une salas, dibuja el cartón y escucha los avisos en vivo.
 const $ = (id) => document.getElementById(id);
 
-const LABELS = { linea: 'LÍNEA', bingo: 'BINGO' };
+const LABELS = { linea: 'LÍNEA', bingo: 'BINGO', basta: 'BASTA' };
+const GAME_NAMES = { bingo: 'Bingo', tutti: 'Tutti Frutti' };
 
 let session = null; // { code, playerId }
 let state = null;
@@ -54,6 +55,14 @@ function homeError(msg) {
 }
 
 $('name').value = storageGet('bingo:name') || '';
+
+// El logo cambia según el juego elegido: BINGO o TUTTI
+document.querySelectorAll('input[name="game"]').forEach((radio) => {
+  radio.addEventListener('change', () => {
+    const word = radio.value === 'tutti' ? 'TUTTI' : 'BINGO';
+    $('logo').querySelectorAll('span').forEach((el, i) => { el.textContent = word[i]; });
+  });
+});
 const urlCode = new URLSearchParams(location.search).get('sala');
 if (urlCode) $('code').value = urlCode.toUpperCase();
 
@@ -61,7 +70,8 @@ $('create').addEventListener('click', async () => {
   const name = $('name').value.trim();
   if (!name) return homeError('Escribe tu nombre primero');
   try {
-    const data = await api('/api/rooms', { name });
+    const game = document.querySelector('input[name="game"]:checked').value;
+    const data = await api('/api/rooms', { name, game });
     enterRoom(data, name);
   } catch (e) {
     homeError(e.message);
@@ -127,7 +137,14 @@ function handleEvent(ev) {
     showToast(`Se anuló el canto de ${ev.claim.playerName}. Seguimos jugando.`);
   } else if (ev.type === 'reset') {
     closeAnnounce();
-    showToast('¡Nueva partida! Tienes un cartón nuevo.');
+    showToast(state.game === 'bingo' ? '¡Nueva partida! Tienes un cartón nuevo.' : 'Todas las letras volvieron a la ruleta.');
+  } else if (ev.type === 'spin') {
+    closeAnnounce();
+  } else if (ev.type === 'letter') {
+    if (navigator.vibrate) navigator.vibrate(150);
+  } else if (ev.type === 'basta') {
+    announce('basta', ev.claim.playerId === me ? '¡Fuiste tú!' : ev.claim.playerName);
+    if (navigator.vibrate) navigator.vibrate([120, 60, 120]);
   } else if (ev.type === 'join') {
     showToast(`${ev.playerName} entró a la sala`);
   }
@@ -135,8 +152,18 @@ function handleEvent(ev) {
 
 // ---------- Dibujo ----------
 function render() {
-  const isHost = state.me.id === state.hostId;
   $('room-code').textContent = state.code;
+  $('game-name').textContent = GAME_NAMES[state.game];
+  $('bingo-view').hidden = state.game !== 'bingo';
+  $('claims-panel').hidden = state.game !== 'bingo';
+  $('tutti-view').hidden = state.game !== 'tutti';
+  if (state.game === 'bingo') renderBingo();
+  else renderTutti();
+  renderPlayers();
+}
+
+function renderBingo() {
+  const isHost = state.me.id === state.hostId;
   $('player-name').textContent = state.me.name;
   $('round').textContent = `Partida ${state.round}`;
   $('phase').textContent =
@@ -148,8 +175,113 @@ function render() {
 
   renderCard();
   renderClaimButton();
-  renderPlayers();
   renderClaims();
+}
+
+// ---------- Tutti Frutti: ruleta ----------
+const WHEEL_COLORS = ['#e4572e', '#f3a712', '#2a9d8f', '#3d5a80', '#8e5572'];
+let wheelRotation = 0; // grados acumulados, para que siempre gire hacia adelante
+let wheelRound = null; // ronda que la ruleta ya mostró o está animando
+let revealTimer = null;
+
+function buildWheel() {
+  const svg = $('wheel');
+  if (svg.childElementCount) return;
+  const seg = 360 / state.letters.length;
+  const point = (r, deg) => {
+    const rad = (deg * Math.PI) / 180;
+    return `${(r * Math.sin(rad)).toFixed(2)} ${(-r * Math.cos(rad)).toFixed(2)}`;
+  };
+  let html = '';
+  state.letters.forEach((letter, i) => {
+    const a0 = i * seg;
+    const mid = a0 + seg / 2;
+    html += `<path d="M0 0 L${point(96, a0)} A96 96 0 0 1 ${point(96, a0 + seg)} Z" fill="${WHEEL_COLORS[i % WHEEL_COLORS.length]}" stroke="#fff" stroke-width="1"/>`;
+    html += `<text transform="rotate(${mid}) translate(0 -80)">${letter}</text>`;
+  });
+  svg.innerHTML = html;
+}
+
+// Gira la ruleta para que la letra quede bajo el indicador de arriba.
+function turnWheelTo(letter, durationMs) {
+  const svg = $('wheel');
+  const seg = 360 / state.letters.length;
+  const mid = state.letters.indexOf(letter) * seg + seg / 2;
+  const jitter = (Math.random() - 0.5) * seg * 0.6;
+  const spins = durationMs > 0 ? 360 * 5 : 0;
+  const base = wheelRotation + spins;
+  const offset = ((((-mid + jitter - base) % 360) + 360) % 360);
+  wheelRotation = base + offset;
+  svg.style.transition = durationMs > 0
+    ? `transform ${durationMs}ms cubic-bezier(0.15, 0.7, 0.1, 1)`
+    : 'none';
+  svg.style.transform = `rotate(${wheelRotation}deg)`;
+}
+
+function renderTutti() {
+  const isHost = state.me.id === state.hostId;
+  const host = state.players.find((p) => p.id === state.hostId);
+  buildWheel();
+
+  $('round').textContent = state.round ? `Ronda ${state.round}` : 'Sin rondas aún';
+  $('phase').textContent = {
+    esperando: 'Esperando la ruleta',
+    girando: 'Girando…',
+    jugando: `Letra ${state.letter}`,
+    basta: '¡Basta!',
+  }[state.phase];
+
+  // Animación: solo la primera vez que vemos cada ronda
+  const center = $('wheel-center');
+  if (state.letter && wheelRound !== state.round) {
+    wheelRound = state.round;
+    clearTimeout(revealTimer);
+    if (state.phase === 'girando') {
+      const remaining = Math.min(state.spinMs, Math.max(800, state.spinEndsAt - Date.now()));
+      turnWheelTo(state.letter, remaining);
+    } else {
+      turnWheelTo(state.letter, 0);
+    }
+  }
+  if (!state.letter) {
+    wheelRound = null;
+    center.textContent = '?';
+  } else if (state.phase === 'girando') {
+    center.textContent = '?';
+  } else if (center.textContent !== state.letter) {
+    center.textContent = state.letter;
+    center.classList.remove('reveal');
+    void center.offsetWidth; // reinicia la animación
+    center.classList.add('reveal');
+  }
+
+  $('wheel-status').textContent = {
+    esperando: isHost ? 'Gira la ruleta para sacar la primera letra' : `Esperando que ${host ? host.name : 'el anfitrión'} gire la ruleta`,
+    girando: '¡Girando!',
+    jugando: `¡A escribir con la ${state.letter}!`,
+    basta: state.bastaBy ? `${state.bastaBy.playerName} cantó basta. ¡Lápices abajo!` : '¡Basta!',
+  }[state.phase];
+
+  $('spin').hidden = !isHost;
+  $('spin').disabled = state.phase === 'girando';
+  $('spin').textContent = state.round ? 'Girar de nuevo' : 'Girar la ruleta';
+  $('basta').disabled = state.phase !== 'jugando';
+  $('tutti-host-tools').hidden = !isHost;
+  $('tutti-reset').disabled = state.usedLetters.length === 0 || state.phase === 'girando';
+
+  const used = $('used-letters');
+  used.innerHTML = '';
+  // La letra que está girando no se muestra hasta que la ruleta se detenga
+  const visible = state.phase === 'girando' ? state.usedLetters.slice(0, -1) : state.usedLetters;
+  if (visible.length === 0) {
+    used.innerHTML = '<span class="empty-msg">Ninguna todavía</span>';
+  }
+  visible.forEach((l, i) => {
+    const el = document.createElement('span');
+    el.textContent = l;
+    if (i === visible.length - 1 && state.phase !== 'girando') el.className = 'current';
+    used.appendChild(el);
+  });
 }
 
 function renderCard() {
@@ -250,6 +382,31 @@ $('claim').addEventListener('click', async () => {
   }
 });
 
+$('spin').addEventListener('click', async () => {
+  try {
+    await api(`/api/rooms/${session.code}/spin`, { playerId: session.playerId });
+  } catch (e) {
+    showToast(e.message);
+  }
+});
+
+$('basta').addEventListener('click', async () => {
+  try {
+    await api(`/api/rooms/${session.code}/basta`, { playerId: session.playerId });
+  } catch (e) {
+    showToast(e.message);
+  }
+});
+
+$('tutti-reset').addEventListener('click', async () => {
+  if (!confirm('¿Devolver todas las letras a la ruleta?')) return;
+  try {
+    await api(`/api/rooms/${session.code}/reset`, { playerId: session.playerId });
+  } catch (e) {
+    showToast(e.message);
+  }
+});
+
 $('undo').addEventListener('click', async () => {
   if (!confirm('¿Anular el último canto? La partida sigue desde ahí.')) return;
   try {
@@ -270,9 +427,9 @@ $('reset').addEventListener('click', async () => {
 
 $('share').addEventListener('click', async () => {
   const link = `${location.origin}/?sala=${session.code}`;
-  const text = `¡Únete a mi bingo! Sala ${session.code}`;
+  const text = `¡Únete a mi ${GAME_NAMES[state.game]}! Sala ${session.code}`;
   try {
-    if (navigator.share) await navigator.share({ title: 'Bingo', text, url: link });
+    if (navigator.share) await navigator.share({ title: GAME_NAMES[state.game], text, url: link });
     else {
       await navigator.clipboard.writeText(link);
       showToast('Enlace copiado');
