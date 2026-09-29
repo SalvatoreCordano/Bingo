@@ -1,0 +1,101 @@
+<!doctype html>
+<html lang="es">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <meta name="theme-color" content="#1f2a44">
+  <title>Bingo en sala</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Fredoka:wght@500;600;700&family=Inter:wght@400;500;600&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="/styles.css">
+</head>
+<body>
+  <!-- Pantalla de inicio -->
+  <main id="home" class="screen">
+    <div class="home-card">
+      <div class="logo" aria-hidden="true">
+        <span>B</span><span>I</span><span>N</span><span>G</span><span>O</span>
+      </div>
+      <p class="tagline">Tu cartón en el celular. Las bolas, en la mesa.</p>
+
+      <label class="field">
+        <span>Tu nombre</span>
+        <input id="name" type="text" maxlength="20" autocomplete="nickname" placeholder="Ej: Ana">
+      </label>
+
+      <button id="create" class="btn btn-primary">Crear sala</button>
+
+      <div class="divider"><span>o únete a una</span></div>
+
+      <div class="join-row">
+        <input id="code" type="text" maxlength="4" placeholder="CÓDIGO" autocapitalize="characters" aria-label="Código de sala">
+        <button id="join" class="btn btn-secondary">Unirme</button>
+      </div>
+
+      <p id="home-error" class="error" role="alert"></p>
+    </div>
+  </main>
+
+  <!-- Pantalla de juego -->
+  <main id="game" class="screen" hidden>
+    <header class="topbar">
+      <div>
+        <div class="label">Sala</div>
+        <div id="room-code" class="room-code"></div>
+      </div>
+      <div class="topbar-actions">
+        <button id="share" class="btn btn-ghost">Invitar</button>
+        <button id="leave" class="btn btn-ghost">Salir</button>
+      </div>
+    </header>
+
+    <section class="status">
+      <span id="round" class="pill"></span>
+      <span id="phase" class="pill pill-accent"></span>
+    </section>
+
+    <section class="card-wrap">
+      <div class="card-head">
+        <span id="player-name"></span>
+        <span id="marked-count"></span>
+      </div>
+      <div id="card" class="card" role="grid" aria-label="Tu cartón"></div>
+      <p class="hint">Toca un número para marcarlo. Tócalo de nuevo para desmarcarlo.</p>
+    </section>
+
+    <button id="claim" class="btn btn-claim"></button>
+
+    <section id="host-tools" class="host-tools" hidden>
+      <div class="label">Controles de la sala</div>
+      <div class="host-row">
+        <button id="undo" class="btn btn-ghost">Anular último canto</button>
+        <button id="reset" class="btn btn-secondary">Nueva partida</button>
+      </div>
+    </section>
+
+    <section class="panel">
+      <div class="label">Jugadores</div>
+      <ul id="players" class="players"></ul>
+    </section>
+
+    <section class="panel">
+      <div class="label">Cantos</div>
+      <ul id="claims" class="claims"></ul>
+    </section>
+  </main>
+
+  <!-- Aviso grande cuando alguien canta -->
+  <div id="announce" class="announce" hidden>
+    <div class="announce-box">
+      <div id="announce-type" class="announce-type"></div>
+      <div id="announce-name" class="announce-name"></div>
+      <button id="announce-close" class="btn btn-secondary">Seguir</button>
+    </div>
+  </div>
+
+  <div id="toast" class="toast" role="status" hidden></div>
+
+  <script src="/app.js"></script>
+</body>
+</html>
