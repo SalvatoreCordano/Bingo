@@ -147,8 +147,10 @@ async function poll() {
     // Sin conexión por un momento: se reintenta en la próxima vuelta.
   }
   // Si la ruleta está girando, consultar justo cuando se detiene para mostrar la letra al instante
-  const spinning = state && state.phase === 'girando';
-  schedulePoll(spinning ? Math.min(POLL_MS, Math.max(50, state.spinEndsAt - state.now + 150)) : POLL_MS);
+  let delay = POLL_MS;
+  if (state && state.phase === 'girando') delay = state.spinEndsAt - state.now + 150;
+  if (state && state.phase === 'basta') delay = state.bastaAt + state.graceMs - state.now + 150;
+  schedulePoll(Math.min(POLL_MS, Math.max(50, delay)));
 }
 
 document.addEventListener('visibilitychange', () => {
@@ -165,7 +167,9 @@ function handleEvent(ev) {
     showToast(`Se anuló el canto de ${ev.claim.playerName}. Seguimos jugando.`);
   } else if (ev.type === 'reset') {
     closeAnnounce();
-    showToast(state.game === 'bingo' ? '¡Nueva partida! Tienes un cartón nuevo.' : 'Todas las letras volvieron a la ruleta.');
+    showToast(state.game === 'bingo' ? '¡Nueva partida! Tienes un cartón nuevo.' : '¡Nueva partida! Puntos a cero.');
+  } else if (ev.type === 'confirm') {
+    showToast('¡Puntos sumados a la tabla!');
   } else if (ev.type === 'spin') {
     closeAnnounce();
   } else if (ev.type === 'letter') {
@@ -246,9 +250,195 @@ function turnWheelTo(letter, durationMs) {
   svg.style.transform = `rotate(${wheelRotation}deg)`;
 }
 
+// ---------- Tutti Frutti: respuestas ----------
+// Igual que en el servidor: sin tildes, sin mayúsculas, espacios simples.
+function normalize(text) {
+  return String(text || '').normalize('NFD').replace(/[̀-ͯ]/g, '').toLowerCase().replace(/\s+/g, ' ').trim();
+}
+
+let answersRound = null; // ronda para la que está armado el formulario
+let saveTimer = null;
+let lastSent = null;
+
+function answersKey(round) {
+  return `tutti:answers:${session.code}:${session.playerId}:${round}`;
+}
+function myAnswers() {
+  return [...document.querySelectorAll('#answers input')].map((i) => i.value);
+}
+
+function buildAnswers() {
+  const list = $('answers');
+  const round = state.round;
+  if (answersRound === round && list.childElementCount) return;
+  answersRound = round;
+  lastSent = null;
+  const saved = (round && storageGet(answersKey(round))) || [];
+  list.innerHTML = '';
+  state.categories.forEach((c, i) => {
+    const li = document.createElement('li');
+    const label = document.createElement('label');
+    label.htmlFor = `ans-${i}`;
+    label.textContent = c;
+    const input = document.createElement('input');
+    input.id = `ans-${i}`;
+    input.type = 'text';
+    input.maxLength = 40;
+    input.autocomplete = 'off';
+    input.autocapitalize = 'sentences';
+    input.enterKeyHint = i === state.categories.length - 1 ? 'done' : 'next';
+    input.value = saved[i] || '';
+    input.addEventListener('input', onAnswerInput);
+    input.addEventListener('keydown', (e) => {
+      if (e.key !== 'Enter') return;
+      e.preventDefault();
+      const next = $(`ans-${i + 1}`);
+      if (next) next.focus(); else input.blur();
+    });
+    li.append(label, input);
+    list.appendChild(li);
+  });
+}
+
+function onAnswerInput() {
+  storageSet(answersKey(state.round), myAnswers());
+  updateAnswerHints();
+  clearTimeout(saveTimer);
+  saveTimer = setTimeout(sendAnswers, 700);
+}
+
+// Guarda mis respuestas en el servidor (solo si cambiaron)
+async function sendAnswers() {
+  clearTimeout(saveTimer);
+  if (!state || state.game !== 'tutti' || !answersRound) return;
+  const answers = myAnswers();
+  const payload = JSON.stringify(answers);
+  if (payload === lastSent) return;
+  try {
+    await api(`/api/rooms/${session.code}/answers`, { playerId: session.playerId, round: answersRound, answers });
+    lastSent = payload;
+  } catch {
+    // La ronda ya se cerró o no hubo conexión: se ignora
+  }
+}
+
+function updateAnswerHints() {
+  const initial = normalize(state.letter);
+  document.querySelectorAll('#answers input').forEach((input) => {
+    const v = normalize(input.value);
+    input.classList.toggle('bad', Boolean(v && initial && !v.startsWith(initial)));
+  });
+  const isHost = state.me.id === state.hostId;
+  const complete = myAnswers().every((a) => normalize(a));
+  const playing = state.phase === 'jugando';
+  $('basta').disabled = !playing || (!complete && !isHost);
+  $('basta').textContent = playing && isHost && !complete ? 'Cortar ronda' : '¡BASTA!';
+  const missing = myAnswers().filter((a) => !normalize(a)).length;
+  $('basta-hint').textContent = !playing ? ''
+    : complete ? '¡Listo! Canta basta antes que los demás'
+    : isHost ? `Te faltan ${missing}. Como anfitrión puedes cortar la ronda igual`
+    : `Te faltan ${missing} para poder cantar basta`;
+}
+
+// ---------- Tutti Frutti: revisión y puntos ----------
+const STATUS_LABEL = { vacia: 'vacía', letra: 'no empieza con la letra', anulada: 'anulada' };
+
+function renderReview() {
+  const review = state.review;
+  const isHost = state.me.id === state.hostId;
+  $('review').hidden = !review;
+  $('confirm').hidden = !(review && !review.confirmed && isHost);
+  if (!review) return;
+  $('review-title').textContent = `Ronda ${review.round} · Letra ${review.letter}`;
+  $('review-note').textContent = review.confirmed
+    ? 'Puntos sumados a la tabla.'
+    : isHost ? 'Revisa las respuestas: toca "Anular" si alguna no vale. Después confirma los puntos.'
+    : 'El anfitrión está revisando. Puede anular respuestas que no valen.';
+
+  const list = $('review-list');
+  list.innerHTML = '';
+  state.categories.forEach((cat, ci) => {
+    const block = document.createElement('div');
+    block.className = 'review-cat';
+    const h = document.createElement('h3');
+    h.textContent = `${ci + 1}. ${cat}`;
+    block.appendChild(h);
+    state.players.forEach((p) => {
+      const r = review.result[p.id];
+      if (!r) return;
+      const answer = (review.answers[p.id] || [])[ci] || '';
+      const status = r.status[ci];
+      const row = document.createElement('div');
+      row.className = `review-row status-${status}`;
+      const name = document.createElement('span');
+      name.className = 'review-name';
+      name.textContent = p.name;
+      const ans = document.createElement('span');
+      ans.className = 'review-answer';
+      ans.textContent = answer.trim() || '—';
+      if (status !== 'ok' && status !== 'vacia') {
+        const why = document.createElement('small');
+        why.textContent = STATUS_LABEL[status];
+        ans.appendChild(why);
+      }
+      const pts = document.createElement('span');
+      pts.className = `pts pts-${r.points[ci]}`;
+      pts.textContent = r.points[ci];
+      row.append(name, ans, pts);
+      if (isHost && !review.confirmed && (status === 'ok' || status === 'anulada')) {
+        const btn = document.createElement('button');
+        btn.className = 'btn btn-ghost btn-mini';
+        btn.textContent = status === 'anulada' ? 'Validar' : 'Anular';
+        btn.addEventListener('click', () => toggleReject(p.id, ci));
+        row.appendChild(btn);
+      }
+      block.appendChild(row);
+    });
+    list.appendChild(block);
+  });
+}
+
+async function toggleReject(target, cat) {
+  try {
+    await api(`/api/rooms/${session.code}/reject`, { playerId: session.playerId, target, cat });
+    poll();
+  } catch (e) {
+    showToast(e.message);
+  }
+}
+
+function renderScoreboard() {
+  const review = state.review;
+  const pending = review && !review.confirmed ? review.result : null;
+  const rows = state.players.map((p) => ({
+    name: p.name,
+    me: p.id === state.me.id,
+    total: (state.scores[p.id] || 0) + (pending && pending[p.id] ? pending[p.id].total : 0),
+    round: review && review.result[p.id] ? review.result[p.id].total : null,
+  })).sort((a, b) => b.total - a.total);
+  const board = $('scoreboard');
+  board.innerHTML = '';
+  rows.forEach((r) => {
+    const li = document.createElement('li');
+    if (r.me) li.className = 'me';
+    const name = document.createElement('span');
+    name.className = 'sb-name';
+    name.textContent = r.name;
+    const delta = document.createElement('span');
+    delta.className = 'sb-delta';
+    delta.textContent = r.round !== null ? `+${r.round}` : '';
+    const total = document.createElement('span');
+    total.className = 'sb-total';
+    total.textContent = r.total;
+    li.append(name, delta, total);
+    board.appendChild(li);
+  });
+}
+
 function renderTutti() {
   const isHost = state.me.id === state.hostId;
   const host = state.players.find((p) => p.id === state.hostId);
+  const phase = state.phase;
   buildWheel();
 
   $('round').textContent = state.round ? `Ronda ${state.round}` : 'Sin rondas aún';
@@ -257,14 +447,16 @@ function renderTutti() {
     girando: 'Girando…',
     jugando: `Letra ${state.letter}`,
     basta: '¡Basta!',
-  }[state.phase];
+    revision: 'Revisando respuestas',
+    resultados: 'Puntos sumados',
+  }[phase];
 
   // Animación: solo la primera vez que vemos cada ronda
   const center = $('wheel-center');
   if (state.letter && wheelRound !== state.round) {
     wheelRound = state.round;
     clearTimeout(revealTimer);
-    if (state.phase === 'girando') {
+    if (phase === 'girando') {
       const remaining = Math.min(state.spinMs, Math.max(800, state.spinEndsAt - state.now));
       turnWheelTo(state.letter, remaining);
     } else {
@@ -274,7 +466,7 @@ function renderTutti() {
   if (!state.letter) {
     wheelRound = null;
     center.textContent = '?';
-  } else if (state.phase === 'girando') {
+  } else if (phase === 'girando') {
     center.textContent = '?';
   } else if (center.textContent !== state.letter) {
     center.textContent = state.letter;
@@ -283,47 +475,62 @@ function renderTutti() {
     center.classList.add('reveal');
   }
 
+  // Qué se ve en cada momento
+  const writing = phase === 'jugando' || phase === 'basta';
+  const reviewing = phase === 'revision' || phase === 'resultados';
+  $('wheel-wrap').hidden = writing || phase === 'revision';
+  $('letter-banner').hidden = !writing;
+  $('answers-panel').hidden = reviewing;
+  $('basta-wrap').hidden = reviewing;
+  $('scoreboard-panel').hidden = !reviewing && !Object.keys(state.scores).length;
+
   $('wheel-status').textContent = {
     esperando: isHost ? 'Gira la ruleta para sacar la primera letra' : `Esperando que ${host ? host.name : 'el anfitrión'} gire la ruleta`,
     girando: '¡Girando!',
-    jugando: `¡A escribir con la ${state.letter}!`,
-    basta: state.bastaBy ? `${state.bastaBy.playerName} cantó basta. ¡Lápices abajo!` : '¡Basta!',
-  }[state.phase];
+    resultados: isHost ? 'Cuando estén listos, gira para la siguiente ronda' : `Esperando que ${host ? host.name : 'el anfitrión'} gire la siguiente ronda`,
+  }[phase] || '';
 
-  $('spin').hidden = !isHost;
-  $('spin').disabled = state.phase === 'girando';
-  $('spin').textContent = state.round ? 'Girar de nuevo' : 'Girar la ruleta';
-  $('basta').disabled = state.phase !== 'jugando';
-  $('tutti-host-tools').hidden = !isHost;
-  $('tutti-reset').disabled = state.usedLetters.length === 0 || state.phase === 'girando';
-
-  const showLetter = state.letter && state.phase !== 'girando';
-  $('categories-title').textContent = showLetter ? `Categorías con la ${state.letter}` : 'Categorías';
-  const cats = $('categories');
-  cats.innerHTML = '';
-  state.categories.forEach((c) => {
-    const li = document.createElement('li');
-    li.textContent = c;
-    if (showLetter) {
-      const tag = document.createElement('span');
-      tag.className = 'cat-letter';
-      tag.textContent = state.letter;
-      li.prepend(tag);
+  if (writing) {
+    const banner = $('banner-letter');
+    if (banner.textContent !== state.letter) {
+      banner.textContent = state.letter;
+      banner.classList.remove('reveal');
+      void banner.offsetWidth;
+      banner.classList.add('reveal');
     }
-    cats.appendChild(li);
-  });
+    $('banner-status').textContent = phase === 'jugando'
+      ? `¡A escribir! Todas deben empezar con ${state.letter}`
+      : `${state.bastaBy ? state.bastaBy.playerName : 'Alguien'} cantó basta. ¡Se acabó el tiempo!`;
+  }
+
+  // Formulario de respuestas: visible desde antes para que todos conozcan las categorías
+  buildAnswers();
+  const canWrite = phase === 'jugando';
+  document.querySelectorAll('#answers input').forEach((input) => { input.disabled = !canWrite; });
+  $('answers-title').textContent = writing ? `Tus respuestas con la ${state.letter}` : 'Categorías';
+  // Al cantarse basta, mandar lo último que escribí
+  if (phase === 'basta') sendAnswers();
+  updateAnswerHints();
+
+  renderReview();
+  renderScoreboard();
+
+  $('spin').hidden = !isHost || !(phase === 'esperando' || phase === 'resultados');
+  $('spin').textContent = state.round ? 'Girar para la siguiente ronda' : 'Girar la ruleta';
+  $('tutti-host-tools').hidden = !isHost;
+  $('tutti-reset').disabled = !state.round || phase === 'girando';
 
   const used = $('used-letters');
   used.innerHTML = '';
   // La letra que está girando no se muestra hasta que la ruleta se detenga
-  const visible = state.phase === 'girando' ? state.usedLetters.slice(0, -1) : state.usedLetters;
+  const visible = phase === 'girando' ? state.usedLetters.slice(0, -1) : state.usedLetters;
   if (visible.length === 0) {
     used.innerHTML = '<span class="empty-msg">Ninguna todavía</span>';
   }
   visible.forEach((l, i) => {
     const el = document.createElement('span');
     el.textContent = l;
-    if (i === visible.length - 1 && state.phase !== 'girando') el.className = 'current';
+    if (i === visible.length - 1 && phase !== 'girando') el.className = 'current';
     used.appendChild(el);
   });
 }
@@ -409,7 +616,12 @@ function renderClaims() {
 }
 
 // ---------- Aviso grande ----------
+let announceTimer = null;
+
 function announce(type, name) {
+  clearTimeout(announceTimer);
+  // El basta se cierra solo cuando termina la gracia y empieza la revisión
+  if (type === 'basta') announceTimer = setTimeout(closeAnnounce, 3000);
   $('announce-type').textContent = `¡${LABELS[type]}!`;
   $('announce-type').classList.toggle('is-bingo', type === 'bingo');
   $('announce-name').textContent = name;
@@ -443,7 +655,16 @@ $('spin').addEventListener('click', async () => {
 
 $('basta').addEventListener('click', async () => {
   try {
-    await api(`/api/rooms/${session.code}/basta`, { playerId: session.playerId });
+    await api(`/api/rooms/${session.code}/basta`, { playerId: session.playerId, round: answersRound, answers: myAnswers() });
+    poll();
+  } catch (e) {
+    showToast(e.message);
+  }
+});
+
+$('confirm').addEventListener('click', async () => {
+  try {
+    await api(`/api/rooms/${session.code}/confirm`, { playerId: session.playerId });
     poll();
   } catch (e) {
     showToast(e.message);
@@ -451,7 +672,7 @@ $('basta').addEventListener('click', async () => {
 });
 
 $('tutti-reset').addEventListener('click', async () => {
-  if (!confirm('¿Devolver todas las letras a la ruleta?')) return;
+  if (!confirm('¿Empezar una nueva partida? Los puntos vuelven a cero y todas las letras a la ruleta.')) return;
   try {
     await api(`/api/rooms/${session.code}/reset`, { playerId: session.playerId });
     poll();

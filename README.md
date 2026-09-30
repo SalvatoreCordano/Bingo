@@ -16,12 +16,16 @@ Los cartones siguen las reglas del bingo de 90: 3 filas x 9 columnas, 15 número
 
 ## Tutti Frutti
 
-Las respuestas se escriben en papel; la app pone la letra y el orden.
+Todo se juega en la web, cada uno desde su celular.
 
-1. Quien creó la sala gira la **ruleta**. Todos ven la misma animación y la misma letra al mismo tiempo.
-2. La ruleta no repite letras. Deja fuera las difíciles (K, Ñ, Q, W, X, Y, Z).
-3. Cualquier jugador puede apretar **¡BASTA!** para cortar la ronda, y a todos les aparece el aviso con su nombre.
-4. Quien creó la sala puede **devolver todas las letras** a la ruleta para empezar de cero.
+1. Quien creó la sala gira la **ruleta**. Todos ven la misma animación y la misma letra al mismo tiempo. La ruleta no repite letras y deja fuera las difíciles (K, Ñ, Q, W, X, Y, Z).
+2. Cada jugador escribe sus respuestas. Se guardan solas mientras escribe (también si recarga la página).
+3. **¡BASTA!** se activa cuando completaste todas las categorías. El anfitrión puede cortar la ronda aunque le falten.
+4. Tras el basta hay 3 segundos de gracia para que lleguen las últimas respuestas y se bloquea la escritura.
+5. **Revisión**: todos ven las respuestas de todos. El anfitrión puede anular las que no valen y luego confirma los puntos.
+6. Los puntos se acumulan en la **tabla**. "Nueva partida" pone los puntos a cero y devuelve las letras.
+
+**Puntaje:** 20 si eres el único con respuesta válida en la categoría, 10 si tu respuesta es distinta, 5 si se repite, 0 si está vacía, no empieza con la letra o fue anulada. No importan tildes ni mayúsculas.
 
 Categorías (fijas, en `CATEGORIES` dentro de `lib/game.js`): Nombre, Fruta o verdura, Ciudad o país, Excusa para llegar tarde, Algo que llevarías a una isla desierta, Algo que se encuentra en una cartera y Superhéroe.
 

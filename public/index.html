@@ -86,7 +86,7 @@
     </div>
 
     <div id="tutti-view" hidden>
-      <section class="wheel-wrap">
+      <section id="wheel-wrap" class="wheel-wrap">
         <div class="wheel-stage">
           <div class="wheel-pointer" aria-hidden="true"></div>
           <svg id="wheel" class="wheel" viewBox="-100 -100 200 200" aria-hidden="true"></svg>
@@ -96,11 +96,38 @@
         <button id="spin" class="btn btn-primary btn-spin" hidden>Girar la ruleta</button>
       </section>
 
-      <button id="basta" class="btn btn-claim is-bingo">¡BASTA!</button>
+      <!-- Mientras se juega: letra grande + respuestas -->
+      <section id="letter-banner" class="letter-banner" hidden>
+        <div id="banner-letter" class="banner-letter"></div>
+        <div>
+          <div class="label">Letra de la ronda</div>
+          <div id="banner-status" class="banner-status" aria-live="polite"></div>
+        </div>
+      </section>
 
-      <section class="panel">
-        <div class="label" id="categories-title">Categorías</div>
-        <ol id="categories" class="categories"></ol>
+      <section id="answers-panel" class="panel">
+        <div class="label" id="answers-title">Categorías</div>
+        <ol id="answers" class="answers"></ol>
+      </section>
+
+      <div id="basta-wrap">
+        <button id="basta" class="btn btn-claim is-bingo">¡BASTA!</button>
+        <p id="basta-hint" class="hint basta-hint"></p>
+      </div>
+
+      <!-- Después del basta: respuestas de todos y puntos -->
+      <section id="review" class="panel" hidden>
+        <div class="review-head">
+          <div class="label" id="review-title">Revisión</div>
+          <p id="review-note" class="hint review-note"></p>
+        </div>
+        <div id="review-list" class="review-list"></div>
+        <button id="confirm" class="btn btn-primary btn-wide" hidden>Confirmar puntos</button>
+      </section>
+
+      <section id="scoreboard-panel" class="panel">
+        <div class="label">Tabla de puntos</div>
+        <ol id="scoreboard" class="scoreboard"></ol>
       </section>
 
       <section class="panel">
@@ -111,7 +138,7 @@
       <section id="tutti-host-tools" class="host-tools" hidden>
         <div class="label">Controles de la sala</div>
         <div class="host-row">
-          <button id="tutti-reset" class="btn btn-ghost">Devolver todas las letras</button>
+          <button id="tutti-reset" class="btn btn-ghost">Nueva partida (puntos a cero)</button>
         </div>
       </section>
     </div>

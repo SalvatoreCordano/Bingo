@@ -403,46 +403,125 @@ button.cell.marked span { color: #fff; }
 .used-letters span.current { background: var(--primary); color: #fff; border-color: transparent; }
 .used-letters .empty-msg { color: var(--muted); font-size: 15px; }
 
-/* ---------- Categorías del Tutti Frutti ---------- */
-.categories {
+/* ---------- Tutti Frutti: letra de la ronda ---------- */
+.letter-banner {
+  display: flex;
+  align-items: center;
+  gap: 16px;
+  background: var(--surface);
+  border-radius: var(--radius);
+  padding: 14px 16px;
+  box-shadow: var(--shadow);
+  margin-bottom: 12px;
+  position: sticky;
+  top: 8px;
+  z-index: 5;
+}
+.banner-letter {
+  flex: none;
+  width: 72px;
+  height: 72px;
+  border-radius: 50%;
+  display: grid;
+  place-items: center;
+  background: var(--primary);
+  color: #fff;
+  font-family: 'Fredoka', sans-serif;
+  font-weight: 700;
+  font-size: 44px;
+  line-height: 1;
+}
+.banner-letter.reveal { animation: pop 0.4s cubic-bezier(0.2, 1.4, 0.4, 1); }
+.banner-status { font-weight: 600; margin-top: 4px; }
+
+/* ---------- Tutti Frutti: respuestas ---------- */
+.answers {
   margin: 10px 0 0;
   padding: 0;
   list-style: none;
   display: flex;
   flex-direction: column;
-  gap: 8px;
+  gap: 12px;
   counter-reset: cat;
 }
-.categories li {
+.answers li { display: flex; flex-direction: column; gap: 6px; }
+.answers label { font-weight: 600; font-size: 15px; }
+.answers label::before {
+  counter-increment: cat;
+  content: counter(cat) '. ';
+  color: var(--muted);
+  font-family: 'Fredoka', sans-serif;
+}
+.answers input:disabled { opacity: 0.7; }
+.answers input.bad { border-color: var(--primary); background: color-mix(in srgb, var(--primary) 8%, var(--bg)); }
+.basta-hint { margin: -8px 0 16px; }
+
+/* ---------- Tutti Frutti: revisión ---------- */
+.review-note { text-align: left; margin: 6px 0 0; }
+.review-list { display: flex; flex-direction: column; gap: 14px; margin-top: 12px; }
+.review-cat h3 { margin: 0 0 6px; font-size: 15px; }
+.review-row {
+  display: grid;
+  grid-template-columns: minmax(60px, 0.8fr) 1.4fr auto auto;
+  align-items: center;
+  gap: 8px;
+  padding: 8px 10px;
+  border-radius: 10px;
+  background: var(--bg);
+  margin-bottom: 4px;
+  font-size: 15px;
+}
+.review-name { font-weight: 600; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.review-answer { overflow-wrap: anywhere; }
+.review-answer small { display: block; color: var(--primary); font-size: 12px; font-weight: 600; }
+.review-row.status-vacia .review-answer,
+.review-row.status-anulada .review-answer { color: var(--muted); }
+.review-row.status-anulada .review-answer { text-decoration: line-through; }
+.pts {
+  min-width: 34px;
+  text-align: center;
+  font-family: 'Fredoka', sans-serif;
+  font-weight: 700;
+  padding: 3px 6px;
+  border-radius: 8px;
+  background: var(--line);
+  color: var(--muted);
+}
+.pts-5 { background: var(--accent); color: #1f2a44; }
+.pts-10 { background: var(--ok); color: #fff; }
+.pts-20 { background: var(--primary); color: #fff; }
+.btn-mini { padding: 6px 10px; font-size: 13px; border-radius: 10px; }
+.btn-wide { width: 100%; margin-top: 14px; font-size: 17px; padding: 16px; }
+
+/* ---------- Tutti Frutti: tabla de puntos ---------- */
+.scoreboard {
+  margin: 10px 0 0;
+  padding: 0;
+  list-style: none;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  counter-reset: pos;
+}
+.scoreboard li {
   display: flex;
   align-items: center;
   gap: 10px;
-  font-size: 16px;
-  font-weight: 500;
   padding: 10px 12px;
   border-radius: 12px;
   background: var(--bg);
+  font-size: 16px;
 }
-.categories li::before {
-  counter-increment: cat;
-  content: counter(cat);
+.scoreboard li::before {
+  counter-increment: pos;
+  content: counter(pos);
   font-family: 'Fredoka', sans-serif;
   font-weight: 700;
   color: var(--muted);
   min-width: 1.2em;
 }
-.cat-letter {
-  order: 1;
-  margin-left: auto;
-  flex: none;
-  width: 28px;
-  height: 28px;
-  border-radius: 50%;
-  display: grid;
-  place-items: center;
-  font-family: 'Fredoka', sans-serif;
-  font-weight: 700;
-  font-size: 15px;
-  background: var(--primary);
-  color: #fff;
-}
+.scoreboard li:first-child::before { content: '🏆'; }
+.scoreboard li.me { outline: 2px solid var(--accent); }
+.sb-name { flex: 1; font-weight: 600; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.sb-delta { color: var(--ok); font-weight: 600; font-size: 14px; }
+.sb-total { font-family: 'Fredoka', sans-serif; font-weight: 700; font-size: 20px; min-width: 2.5em; text-align: right; }
