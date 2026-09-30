@@ -23,6 +23,8 @@ Las respuestas se escriben en papel; la app pone la letra y el orden.
 3. Cualquier jugador puede apretar **¡BASTA!** para cortar la ronda, y a todos les aparece el aviso con su nombre.
 4. Quien creó la sala puede **devolver todas las letras** a la ruleta para empezar de cero.
 
+Categorías (fijas, en `CATEGORIES` dentro de `server.js`): Nombre, Fruta o verdura, Ciudad o país, Excusa para llegar tarde, Algo que llevarías a una isla desierta, Algo que se encuentra en una cartera y Superhéroe.
+
 ## Correrlo
 
 Solo necesitas Node.js 18 o superior. No hay dependencias que instalar.

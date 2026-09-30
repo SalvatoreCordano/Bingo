@@ -11,6 +11,15 @@ const ROOM_TTL_MS = 12 * 60 * 60 * 1000; // una sala sin actividad se borra a la
 const SPIN_MS = 5000; // lo que dura el giro de la ruleta del Tutti Frutti
 // Letras de la ruleta: se dejan fuera las que casi no tienen palabras (K, Ñ, Q, W, X, Y, Z)
 const LETTERS = 'ABCDEFGHIJLMNOPRSTUV'.split('');
+const CATEGORIES = [
+  'Nombre',
+  'Fruta o verdura',
+  'Ciudad o país',
+  'Excusa para llegar tarde',
+  'Algo que llevarías a una isla desierta',
+  'Algo que se encuentra en una cartera',
+  'Superhéroe',
+];
 
 const rooms = new Map();
 
@@ -103,6 +112,7 @@ function publicState(room, playerId) {
   } else {
     // phase: 'esperando' | 'girando' | 'jugando' | 'basta'
     state.letters = LETTERS;
+    state.categories = CATEGORIES;
     state.letter = room.letter;
     state.usedLetters = room.usedLetters;
     state.spinEndsAt = room.spinEndsAt;

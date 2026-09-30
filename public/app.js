@@ -269,6 +269,22 @@ function renderTutti() {
   $('tutti-host-tools').hidden = !isHost;
   $('tutti-reset').disabled = state.usedLetters.length === 0 || state.phase === 'girando';
 
+  const showLetter = state.letter && state.phase !== 'girando';
+  $('categories-title').textContent = showLetter ? `Categorías con la ${state.letter}` : 'Categorías';
+  const cats = $('categories');
+  cats.innerHTML = '';
+  state.categories.forEach((c) => {
+    const li = document.createElement('li');
+    li.textContent = c;
+    if (showLetter) {
+      const tag = document.createElement('span');
+      tag.className = 'cat-letter';
+      tag.textContent = state.letter;
+      li.prepend(tag);
+    }
+    cats.appendChild(li);
+  });
+
   const used = $('used-letters');
   used.innerHTML = '';
   // La letra que está girando no se muestra hasta que la ruleta se detenga
