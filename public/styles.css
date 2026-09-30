@@ -525,3 +525,4 @@ button.cell.marked span { color: #fff; }
 .sb-name { flex: 1; font-weight: 600; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .sb-delta { color: var(--ok); font-weight: 600; font-size: 14px; }
 .sb-total { font-family: 'Fredoka', sans-serif; font-weight: 700; font-size: 20px; min-width: 2.5em; text-align: right; }
+.players .kick { margin-left: auto; }

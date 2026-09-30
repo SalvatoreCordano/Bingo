@@ -39,8 +39,30 @@ async function api(path, body) {
     body: JSON.stringify(body || {}),
   });
   const data = await res.json().catch(() => ({}));
-  if (!res.ok) throw new Error(data.error || 'Algo salió mal, intenta de nuevo');
+  if (!res.ok) {
+    const err = new Error(data.error || 'Algo salió mal, intenta de nuevo');
+    err.code = data.code;
+    throw err;
+  }
   return data;
+}
+
+// Identificación de este navegador: si entras dos veces a la misma sala, sigues siendo el mismo jugador
+function getClientId() {
+  let id = storageGet('bingo:clientId');
+  if (!id) {
+    id = Math.random().toString(36).slice(2) + Date.now().toString(36);
+    storageSet('bingo:clientId', id);
+  }
+  return id;
+}
+
+// Evita que un doble toque en "Crear sala" o "Unirme" mande dos pedidos
+let entering = false;
+function setEntering(on) {
+  entering = on;
+  $('create').disabled = on;
+  $('join').disabled = on;
 }
 
 function showToast(msg) {
@@ -69,14 +91,18 @@ const urlCode = new URLSearchParams(location.search).get('sala');
 if (urlCode) $('code').value = urlCode.toUpperCase();
 
 $('create').addEventListener('click', async () => {
+  if (entering) return;
   const name = $('name').value.trim();
   if (!name) return homeError('Escribe tu nombre primero');
+  setEntering(true);
   try {
     const game = document.querySelector('input[name="game"]:checked').value;
-    const data = await api('/api/rooms', { name, game });
+    const data = await api('/api/rooms', { name, game, clientId: getClientId() });
     enterRoom(data, name);
   } catch (e) {
     homeError(e.message);
+  } finally {
+    setEntering(false);
   }
 });
 
@@ -84,15 +110,31 @@ $('join').addEventListener('click', joinRoom);
 $('code').addEventListener('keydown', (e) => { if (e.key === 'Enter') joinRoom(); });
 
 async function joinRoom() {
+  if (entering) return;
   const name = $('name').value.trim();
   const code = $('code').value.trim().toUpperCase();
   if (!name) return homeError('Escribe tu nombre primero');
   if (code.length !== 4) return homeError('El código tiene 4 letras');
+  setEntering(true);
+  const body = { name, clientId: getClientId() };
   try {
-    const data = await api(`/api/rooms/${code}/join`, { name });
+    let data;
+    try {
+      data = await api(`/api/rooms/${code}/join`, body);
+    } catch (e) {
+      if (e.code !== 'name_taken') throw e;
+      // Ya hay alguien con ese nombre: puede ser la misma persona desde otro celular o navegador
+      if (!confirm(`${e.message}. ¿Eres tú, entrando desde otro celular o navegador?\n\nAceptar: sigues jugando como ese jugador.\nCancelar: eliges otro nombre.`)) {
+        homeError('Elige otro nombre para entrar (por ejemplo, agrega tu apellido).');
+        return;
+      }
+      data = await api(`/api/rooms/${code}/join`, { ...body, reclaim: true });
+    }
     enterRoom(data, name);
   } catch (e) {
     homeError(e.message);
+  } finally {
+    setEntering(false);
   }
 }
 
@@ -127,11 +169,14 @@ async function poll() {
     const res = await fetch(`/api/rooms/${current.code}/state?playerId=${current.playerId}`, { cache: 'no-store' });
     if (current !== session) return;
     if (res.status === 404) {
+      const data = await res.json().catch(() => ({}));
       session = null;
       storageDel('bingo:session');
       $('game').hidden = true;
       $('home').hidden = false;
-      homeError('Esa sala ya no existe. Puede que haya expirado.');
+      homeError(data.code === 'not_member'
+        ? 'Ya no estás en esa sala. Puedes volver a entrar con el código.'
+        : 'Esa sala ya no existe. Puede que haya expirado.');
       return;
     }
     if (!res.ok) throw new Error('Error de red');
@@ -177,6 +222,8 @@ function handleEvent(ev) {
   } else if (ev.type === 'basta') {
     announce('basta', ev.claim.playerId === me ? '¡Fuiste tú!' : ev.claim.playerName);
     if (navigator.vibrate) navigator.vibrate([120, 60, 120]);
+  } else if (ev.type === 'kick') {
+    showToast(`${ev.playerName} salió de la sala`);
   } else if (ev.type === 'join') {
     showToast(`${ev.playerName} entró a la sala`);
   }
@@ -597,8 +644,26 @@ function renderPlayers() {
     li.appendChild(name);
     if (p.id === state.hostId) li.insertAdjacentHTML('beforeend', '<span class="tag">anfitrión</span>');
     if (p.id === state.me.id) li.insertAdjacentHTML('beforeend', '<span class="tag">tú</span>');
+    // El anfitrión puede quitar a un jugador (por ejemplo, uno duplicado)
+    if (state.me.id === state.hostId && p.id !== state.hostId) {
+      const btn = document.createElement('button');
+      btn.className = 'btn btn-ghost btn-mini kick';
+      btn.textContent = 'Quitar';
+      btn.addEventListener('click', () => kickPlayer(p));
+      li.appendChild(btn);
+    }
     list.appendChild(li);
   });
+}
+
+async function kickPlayer(p) {
+  if (!confirm(`¿Quitar a ${p.name} de la sala?`)) return;
+  try {
+    await api(`/api/rooms/${session.code}/kick`, { playerId: session.playerId, target: p.id });
+    poll();
+  } catch (e) {
+    showToast(e.message);
+  }
 }
 
 function renderClaims() {
