@@ -2,9 +2,9 @@
   "name": "bingo",
   "version": "1.0.0",
   "description": "Bingo de 90 bolas en sala: cartones en el celular, bolas en la mesa.",
-  "main": "server.js",
+  "main": "local-server.js",
   "scripts": {
-    "start": "node server.js",
+    "start": "node local-server.js",
     "test": "node --test"
   },
   "engines": {

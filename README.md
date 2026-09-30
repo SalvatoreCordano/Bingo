@@ -23,21 +23,32 @@ Las respuestas se escriben en papel; la app pone la letra y el orden.
 3. Cualquier jugador puede apretar **¡BASTA!** para cortar la ronda, y a todos les aparece el aviso con su nombre.
 4. Quien creó la sala puede **devolver todas las letras** a la ruleta para empezar de cero.
 
-Categorías (fijas, en `CATEGORIES` dentro de `server.js`): Nombre, Fruta o verdura, Ciudad o país, Excusa para llegar tarde, Algo que llevarías a una isla desierta, Algo que se encuentra en una cartera y Superhéroe.
+Categorías (fijas, en `CATEGORIES` dentro de `lib/game.js`): Nombre, Fruta o verdura, Ciudad o país, Excusa para llegar tarde, Algo que llevarías a una isla desierta, Algo que se encuentra en una cartera y Superhéroe.
 
-## Correrlo
+## Correrlo en tu computador
 
 Solo necesitas Node.js 18 o superior. No hay dependencias que instalar.
 
 ```bash
-npm start        # abre http://localhost:3000
+npm start        # abre http://localhost:3000 (salas en memoria)
 npm test         # valida la generación de cartones
 ```
 
 Para jugar en la misma red WiFi, los demás entran a `http://<IP-de-tu-computador>:3000`.
 
-## Notas
+## Publicado en Vercel
 
-- Las salas viven en memoria: si el servidor se reinicia, se pierden. Una sala sin actividad se borra a las 12 horas.
-- Las marcas del cartón se guardan en el celular de cada jugador, así que sobreviven a una recarga de la página.
-- Para publicarlo en internet necesitas un hosting que mantenga el servidor encendido (Render, Railway, Fly.io). Vercel no sirve tal cual porque no mantiene conexiones abiertas ni memoria entre peticiones.
+- `api/handler.js` es la función que atiende todo `/api/*` (ver `vercel.json`); `public/` se sirve como sitio estático.
+- Las salas se guardan en **Upstash Redis**. La conexión se toma de las variables `KV_REST_API_URL` y `KV_REST_API_TOKEN` (o `UPSTASH_REDIS_REST_URL` / `UPSTASH_REDIS_REST_TOKEN`), que Vercel agrega al conectar la base al proyecto.
+- Cada celular consulta la sala cada ~1,2 s y deja de hacerlo cuando la app queda en segundo plano.
+- Un bloqueo corto por sala asegura que, si dos personas cantan a la vez, gane solo la primera.
+
+## Estructura
+
+- `lib/game.js`: reglas de los juegos, cartones y acciones de la sala.
+- `lib/store.js`: dónde se guardan las salas (memoria o Redis).
+- `local-server.js`: servidor para jugar en local.
+- `api/handler.js`: función de Vercel.
+- `public/`: la app que ven los jugadores.
+
+Las salas sin actividad se borran a las 12 horas.

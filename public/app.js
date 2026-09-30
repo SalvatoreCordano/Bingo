@@ -6,7 +6,9 @@ const GAME_NAMES = { bingo: 'Bingo', tutti: 'Tutti Frutti' };
 
 let session = null; // { code, playerId }
 let state = null;
-let events = null;
+let pollTimer = null;
+let lastEventId = null; // último aviso ya mostrado
+const POLL_MS = 1200;
 
 // ---------- Sesión guardada (para volver si se recarga la página) ----------
 function storageGet(key) {
@@ -101,31 +103,57 @@ function enterRoom({ code, playerId }, name) {
   connect({ code, playerId });
 }
 
-// ---------- Conexión en vivo ----------
+// ---------- Conexión con la sala ----------
+// Cada celular consulta la sala cada poco más de un segundo. Los avisos
+// (línea, basta, giro…) vienen en una lista numerada y se muestran una sola vez.
 function connect(s) {
   session = s;
-  if (events) events.close();
-  events = new EventSource(`/api/rooms/${s.code}/events?playerId=${s.playerId}`);
+  lastEventId = null;
+  poll();
+}
 
-  events.onmessage = (msg) => {
-    const ev = JSON.parse(msg.data);
-    state = ev.state;
+function schedulePoll(ms = POLL_MS) {
+  clearTimeout(pollTimer);
+  if (session) pollTimer = setTimeout(poll, ms);
+}
+
+async function poll() {
+  clearTimeout(pollTimer);
+  if (!session) return;
+  // Con la app en segundo plano no se consulta; se retoma al volver.
+  if (document.hidden) return;
+  const current = session;
+  try {
+    const res = await fetch(`/api/rooms/${current.code}/state?playerId=${current.playerId}`, { cache: 'no-store' });
+    if (current !== session) return;
+    if (res.status === 404) {
+      session = null;
+      storageDel('bingo:session');
+      $('game').hidden = true;
+      $('home').hidden = false;
+      homeError('Esa sala ya no existe. Puede que haya expirado.');
+      return;
+    }
+    if (!res.ok) throw new Error('Error de red');
+    state = await res.json();
     $('home').hidden = true;
     $('game').hidden = false;
     render();
-    handleEvent(ev);
-  };
-
-  events.onerror = () => {
-    // Si nunca llegamos a entrar, la sala ya no existe: volvemos al inicio.
-    if (!state) {
-      events.close();
-      storageDel('bingo:session');
-      homeError('No pudimos entrar a la sala. Puede que haya expirado.');
-    }
-    // Si ya estábamos jugando, EventSource reintenta solo.
-  };
+    const fresh = lastEventId === null ? [] : state.events.filter((ev) => ev.id > lastEventId);
+    if (state.events.length) lastEventId = state.events[state.events.length - 1].id;
+    else if (lastEventId === null) lastEventId = 0;
+    fresh.forEach(handleEvent);
+  } catch {
+    // Sin conexión por un momento: se reintenta en la próxima vuelta.
+  }
+  // Si la ruleta está girando, consultar justo cuando se detiene para mostrar la letra al instante
+  const spinning = state && state.phase === 'girando';
+  schedulePoll(spinning ? Math.min(POLL_MS, Math.max(50, state.spinEndsAt - state.now + 150)) : POLL_MS);
 }
+
+document.addEventListener('visibilitychange', () => {
+  if (!document.hidden) poll();
+});
 
 function handleEvent(ev) {
   const me = state.me && state.me.id;
@@ -237,7 +265,7 @@ function renderTutti() {
     wheelRound = state.round;
     clearTimeout(revealTimer);
     if (state.phase === 'girando') {
-      const remaining = Math.min(state.spinMs, Math.max(800, state.spinEndsAt - Date.now()));
+      const remaining = Math.min(state.spinMs, Math.max(800, state.spinEndsAt - state.now));
       turnWheelTo(state.letter, remaining);
     } else {
       turnWheelTo(state.letter, 0);
@@ -300,7 +328,13 @@ function renderTutti() {
   });
 }
 
+let renderedCardKey = null;
+
 function renderCard() {
+  // Solo se redibuja si cambió el cartón (nueva partida); así no se pierden toques
+  const key = `${session.code}:${state.round}:${JSON.stringify(state.me.card)}`;
+  if (key === renderedCardKey) return;
+  renderedCardKey = key;
   const marks = getMarks();
   const card = $('card');
   card.innerHTML = '';
@@ -351,7 +385,6 @@ function renderPlayers() {
   list.innerHTML = '';
   state.players.forEach((p) => {
     const li = document.createElement('li');
-    li.innerHTML = `<span class="dot ${p.online ? 'on' : ''}"></span>`;
     const name = document.createElement('span');
     name.textContent = p.name;
     li.appendChild(name);
@@ -393,6 +426,7 @@ $('claim').addEventListener('click', async () => {
   if (!confirm(`¿Seguro que quieres cantar ${LABELS[type]}?`)) return;
   try {
     await api(`/api/rooms/${session.code}/claim`, { playerId: session.playerId, type });
+    poll();
   } catch (e) {
     showToast(e.message);
   }
@@ -401,6 +435,7 @@ $('claim').addEventListener('click', async () => {
 $('spin').addEventListener('click', async () => {
   try {
     await api(`/api/rooms/${session.code}/spin`, { playerId: session.playerId });
+    poll();
   } catch (e) {
     showToast(e.message);
   }
@@ -409,6 +444,7 @@ $('spin').addEventListener('click', async () => {
 $('basta').addEventListener('click', async () => {
   try {
     await api(`/api/rooms/${session.code}/basta`, { playerId: session.playerId });
+    poll();
   } catch (e) {
     showToast(e.message);
   }
@@ -418,6 +454,7 @@ $('tutti-reset').addEventListener('click', async () => {
   if (!confirm('¿Devolver todas las letras a la ruleta?')) return;
   try {
     await api(`/api/rooms/${session.code}/reset`, { playerId: session.playerId });
+    poll();
   } catch (e) {
     showToast(e.message);
   }
@@ -427,6 +464,7 @@ $('undo').addEventListener('click', async () => {
   if (!confirm('¿Anular el último canto? La partida sigue desde ahí.')) return;
   try {
     await api(`/api/rooms/${session.code}/undo`, { playerId: session.playerId });
+    poll();
   } catch (e) {
     showToast(e.message);
   }
@@ -436,6 +474,7 @@ $('reset').addEventListener('click', async () => {
   if (!confirm('¿Empezar una nueva partida? Todos reciben un cartón nuevo.')) return;
   try {
     await api(`/api/rooms/${session.code}/reset`, { playerId: session.playerId });
+    poll();
   } catch (e) {
     showToast(e.message);
   }
@@ -455,7 +494,8 @@ $('share').addEventListener('click', async () => {
 
 $('leave').addEventListener('click', () => {
   if (!confirm('¿Salir de la sala?')) return;
-  if (events) events.close();
+  session = null;
+  clearTimeout(pollTimer);
   storageDel('bingo:session');
   location.href = '/';
 });

@@ -1,6 +1,6 @@
 const test = require('node:test');
 const assert = require('node:assert');
-const { generateCard } = require('../server');
+const { generateCard } = require('../lib/game');
 
 test('los cartones cumplen las reglas del bingo de 90', () => {
   for (let i = 0; i < 2000; i++) {
