@@ -27,7 +27,7 @@ Todo se juega en la web, cada uno desde su celular.
 
 **Puntaje:** 20 si eres el único con respuesta válida en la categoría, 10 si tu respuesta es distinta, 5 si se repite, 0 si está vacía, no empieza con la letra o fue anulada. No importan tildes ni mayúsculas.
 
-Categorías (fijas, en `CATEGORIES` dentro de `lib/game.js`): Nombre, Fruta o verdura, Ciudad o país, Excusa para llegar tarde, Algo que llevarías a una isla desierta, Algo que se encuentra en una cartera y Superhéroe.
+Categorías (fijas, en `CATEGORIES` dentro de `lib/game.js`): Nombre, Fruta o verdura, Ciudad o país, Excusa para llegar tarde, Algo que llevarías a una isla desierta, Algo que se encuentra en una cartera, Superhéroe y Apodo o chapa.
 
 ## Correrlo en tu computador
 
